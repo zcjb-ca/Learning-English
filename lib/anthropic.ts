@@ -1,6 +1,8 @@
 // Claude client wrapper. Runs server-side only (uses ANTHROPIC_API_KEY). Uses
-// prompt caching on the (large, fixed) system prompt to cut latency and cost,
-// and forces structured JSON output via an assistant prefill of "{".
+// prompt caching on the (large, fixed) system prompt to cut latency and cost.
+// The system prompt mandates JSON-only output, which we extract tolerantly:
+// some Anthropic-compatible gateways (e.g. Vertex-backed via LiteLLM) reject the
+// assistant-message prefill trick ("conversation must end with a user message").
 
 import Anthropic from "@anthropic-ai/sdk";
 import { MODELS } from "./models";
@@ -67,16 +69,13 @@ async function generateJson<T>(args: {
     model: args.model,
     max_tokens: args.maxTokens,
     system: [{ type: "text", text: args.system, cache_control: { type: "ephemeral" } }],
-    messages: [
-      { role: "user", content: userContent },
-      { role: "assistant", content: "{" }, // prefill: force a bare JSON object
-    ],
+    messages: [{ role: "user", content: userContent }],
   });
 
   const body = message.content
     .map((block) => (block.type === "text" ? block.text : ""))
     .join("");
-  return parseJsonObject<T>("{" + body);
+  return parseJsonObject<T>(body);
 }
 
 function asString(value: unknown, fallback = ""): string {
