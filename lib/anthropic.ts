@@ -3,7 +3,6 @@
 // and forces structured JSON output via an assistant prefill of "{".
 
 import Anthropic from "@anthropic-ai/sdk";
-import { requireEnv } from "./env";
 import { MODELS } from "./models";
 import {
   FEEDBACK_SYSTEM,
@@ -15,8 +14,24 @@ import type { Feedback, Frame, IngestResult, Passage, PracticeStage } from "./ty
 
 let client: Anthropic | null = null;
 
+// Works with the official Anthropic API or any Anthropic-compatible gateway
+// (e.g. a company proxy). Auth is whichever the gateway expects: ANTHROPIC_API_KEY
+// is sent as `x-api-key`, ANTHROPIC_AUTH_TOKEN as `Authorization: Bearer`. The
+// base URL comes from ANTHROPIC_BASE_URL (falls back to the official endpoint).
 function getClient(): Anthropic {
-  if (!client) client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
+  if (client) return client;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
+  if (!apiKey && !authToken) {
+    throw new Error(
+      "缺少 Anthropic 凭据：请配置 ANTHROPIC_API_KEY（x-api-key）或 ANTHROPIC_AUTH_TOKEN（Bearer）。",
+    );
+  }
+  client = new Anthropic({
+    ...(apiKey ? { apiKey } : {}),
+    ...(authToken ? { authToken } : {}),
+    baseURL: process.env.ANTHROPIC_BASE_URL || undefined,
+  });
   return client;
 }
 

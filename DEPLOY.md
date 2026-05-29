@@ -8,18 +8,41 @@
 
 ## 你需要准备的三样东西
 
-1. 一个 **Anthropic 账号**（提供 AI 反馈，需要开通计费，个人用量很便宜——通常每天几美分）。
+1. 一份 **AI 凭据**（提供 AI 反馈）。二选一：自己的 **Anthropic 账号**（方案 A），或公司提供的 **base URL + token**（方案 B，不必自购账号）。详见第 1 步。
 2. 一个 **GitHub 账号**（免费，用来存放代码）。
 3. 一个 **Vercel 账号**（免费，用来把网页跑在云端；可以用 GitHub 账号直接登录）。
 
 ---
 
-## 第 1 步：拿到 Anthropic API Key
+## 第 1 步：准备 AI 凭据（方案 A / B 二选一）
+
+应用用 Claude 给反馈。两种接法，挑一种：
+
+### 方案 A — 自购 Anthropic 账号
 
 1. 打开 <https://console.anthropic.com> 注册 / 登录。
 2. 进入 **Billing（计费）**，绑定信用卡并充一点额度（例如 5 美元就够用很久）。
-3. 进入 **API Keys**，点 **Create Key**，复制生成的那串 `sk-ant-...`。
-4. 先把它存在记事本里，第 3 步要用。**这串 key 只会放在云端服务器上，绝不会出现在网页前端。**
+3. 进入 **API Keys**，点 **Create Key**，复制生成的那串 `sk-ant-...`，存好备用。
+
+### 方案 B — 用公司提供的 base URL + token（不必自购账号）
+
+如果公司给了你一个 Anthropic 兼容网关（一个 base URL + 一个 token），可以直接用它，省掉个人计费。**先用一条命令确认它能用**（把尖括号里的占位符换成你的）：
+
+```bash
+# 网关用 x-api-key 时：
+curl -s "<BASE_URL>/v1/messages" \
+  -H "x-api-key: <TOKEN>" -H "anthropic-version: 2023-06-01" \
+  -H "content-type: application/json" \
+  -d '{"model":"<模型名>","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}'
+
+# 如果公司说用 Bearer：把上面的  -H "x-api-key: <TOKEN>"  换成  -H "authorization: Bearer <TOKEN>"
+```
+
+返回一段含 `content` 的 JSON 就说明可用。记下三件事，第 3 步要填：① **base URL**；② token 该放 **x-api-key** 还是 **Bearer**；③ 能用的 **模型名**（若和官方 `claude-sonnet-4-6` 不一样）。
+
+> 合规提醒：用公司资源跑个人项目前，请先确认公司允许这样用。
+
+无论哪种方案，**凭据都只放在云端服务器的环境变量里，绝不会出现在网页前端。**
 
 ---
 
@@ -54,9 +77,16 @@
    - 开通后 Vercel 会自动注入 `DATABASE_URL`，你不用手填。
 
    **填环境变量（Settings → Environment Variables）**
+
+   先按第 1 步选的方案填 AI 凭据：
+
+   - **方案 A**：`ANTHROPIC_API_KEY` = 你的 `sk-ant-...`。
+   - **方案 B**：`ANTHROPIC_BASE_URL` = 公司 base URL；token 二选一——用 x-api-key 就填 `ANTHROPIC_API_KEY`，用 Bearer 就填 `ANTHROPIC_AUTH_TOKEN`；若模型名和官方不同，再填 `MODEL_FEEDBACK` 和 `MODEL_INGEST`（都填成那个可用模型名即可）。
+
+   再填这两个（两种方案都要）：
+
    | 名称 | 值 |
    |------|----|
-   | `ANTHROPIC_API_KEY` | 第 1 步复制的那串 `sk-ant-...` |
    | `APP_PASSWORD` | 你自己设定的登录密码（建议长一点，例如一句话） |
    | `SESSION_SECRET` | 一串随机字符串，用来给登录状态签名 |
 
