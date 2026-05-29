@@ -1,11 +1,11 @@
-// Centralized Claude model ids so they are easy to switch in one place.
-// Sonnet 4.6 balances quality, latency, and cost for interactive feedback;
-// Haiku 4.5 is the cheaper fallback. Each can be overridden by an env var
-// because a company/proxy gateway often exposes different model names.
+// Centralized Claude model ids, easy to switch in one place. Defaults target the
+// company gateway, whose model-group name for Sonnet 4.6 is "claude-4.6-sonnet"
+// (the ordering differs from the official Anthropic id "claude-sonnet-4-6").
+// Override any of these with an env var when pointing at a different endpoint.
 
 export const MODELS = {
-  feedback: process.env.MODEL_FEEDBACK ?? "claude-sonnet-4-6",
-  ingest: process.env.MODEL_INGEST ?? "claude-sonnet-4-6",
+  feedback: process.env.MODEL_FEEDBACK ?? "claude-4.6-sonnet",
+  ingest: process.env.MODEL_INGEST ?? "claude-4.6-sonnet",
   cheap: process.env.MODEL_CHEAP ?? "claude-haiku-4-5-20251001",
 } as const;
 
