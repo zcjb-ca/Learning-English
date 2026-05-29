@@ -47,7 +47,8 @@ export async function POST(request: NextRequest) {
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     text = await extractPdfText(bytes);
-  } catch {
+  } catch (err) {
+    console.error("[lessons] PDF 解析失败:", err);
     return NextResponse.json({ error: "PDF 解析失败，请换一个文件试试" }, { status: 422 });
   }
 
@@ -66,7 +67,8 @@ export async function POST(request: NextRequest) {
   let ingested;
   try {
     ingested = await ingestLesson(text);
-  } catch {
+  } catch (err) {
+    console.error("[lessons] AI ingest 失败:", err);
     return NextResponse.json(
       { error: "AI 抽取句式失败，请稍后重试（也可能是 API key 未配置或额度不足）。" },
       { status: 502 },
