@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but DO commit the template (it contains names only, no secrets).
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +41,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# sample/source PDFs — keep copyrighted study material out of the repo.
+# Upload PDFs in-app instead; they are never committed.
+/docs/samples/

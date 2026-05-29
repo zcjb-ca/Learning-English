@@ -1,65 +1,82 @@
-import Image from "next/image";
+import Link from "next/link";
+import { listLessons } from "@/lib/db";
+import type { LessonSummary } from "@/lib/types";
+import { UploadForm } from "@/components/UploadForm";
+import { LogoutButton } from "@/components/LogoutButton";
+import { InitButton } from "@/components/InitButton";
 
-export default function Home() {
+// Reads the DB and depends on the session cookie, so never prerender it.
+export const dynamic = "force-dynamic";
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
+}
+
+export default async function HomePage() {
+  let lessons: LessonSummary[] | null = null;
+  try {
+    lessons = await listLessons();
+  } catch {
+    lessons = null; // tables not created yet, or DB unreachable
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="mx-auto max-w-2xl space-y-6 px-5 py-8 safe-bottom">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">英语口语训练</h1>
+          <p className="text-sm text-slate-500">五步法 · 地道度 + 语法双反馈</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <Link href="/review" className="text-sm font-medium text-indigo-600">
+            错题复习
+          </Link>
+          <LogoutButton />
+        </div>
+      </header>
+
+      {lessons === null ? (
+        <section className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <h2 className="font-medium text-amber-800">第一次使用，先初始化数据库</h2>
+          <p className="text-sm text-amber-700">
+            点一下下面的按钮，创建保存课程和练习记录所需的数据表。只需做这一次。
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+          <InitButton />
+        </section>
+      ) : (
+        <>
+          <UploadForm />
+
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+              我的课程
+            </h2>
+            {lessons.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+                还没有课程。上传一个 PDF，几十秒后就能开始练。
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {lessons.map((lesson) => (
+                  <li key={lesson.id}>
+                    <Link
+                      href={`/lessons/${lesson.id}/practice`}
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 active:bg-slate-50"
+                    >
+                      <span className="font-medium text-slate-900">{lesson.title}</span>
+                      <span className="text-xs text-slate-400">
+                        {formatDate(lesson.created_at)}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
+    </main>
   );
 }
