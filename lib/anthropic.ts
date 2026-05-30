@@ -63,10 +63,19 @@ export function parseJsonObject<T>(text: string): T {
   const json = text.slice(start, end + 1);
   try {
     return JSON.parse(json) as T;
-  } catch {
-    console.error("[parseJson] 原始输出（前500字）:", json.slice(0, 500));
-    const repaired = jsonrepair(json);
-    return JSON.parse(repaired) as T;
+  } catch (firstErr) {
+    try {
+      const repaired = jsonrepair(json);
+      return JSON.parse(repaired) as T;
+    } catch (repairErr) {
+      const pos = Number(String(repairErr).match(/position (\d+)/)?.[1] ?? -1);
+      const snippet = pos >= 0
+        ? json.slice(Math.max(0, pos - 80), pos + 80)
+        : json.slice(0, 300);
+      const msg = `JSON 解析失败。原始错误: ${firstErr}; jsonrepair 错误: ${repairErr}; 上下文: …${snippet}…`;
+      console.error("[parseJson]", msg);
+      throw new Error(msg);
+    }
   }
 }
 
