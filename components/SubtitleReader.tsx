@@ -41,6 +41,7 @@ function PassageCard({
   onInterested?: (phrase: string, context: string) => void;
 }) {
   const textRef = useRef<HTMLParagraphElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
   const [popup, setPopup] = useState<{ text: string; top: number; left: number } | null>(null);
 
   const handlePointerUp = useCallback(() => {
@@ -58,7 +59,12 @@ function PassageCard({
 
   useEffect(() => {
     function dismiss(e: MouseEvent) {
-      if (popup && textRef.current && !textRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        popup &&
+        textRef.current && !textRef.current.contains(target) &&
+        (!popupRef.current || !popupRef.current.contains(target))
+      ) {
         setPopup(null);
       }
     }
@@ -90,8 +96,8 @@ function PassageCard({
 
       {popup ? (
         <div
+          ref={popupRef}
           style={{ position: "fixed", top: popup.top, left: popup.left, zIndex: 50 }}
-          onMouseDown={(e) => e.stopPropagation()}
         >
           <button
             type="button"
