@@ -72,6 +72,13 @@ export interface LessonSummary {
   created_at: string;
 }
 
+export interface CustomPhrase {
+  id: string;
+  phrase: string;
+  frame: Frame;
+  collocation: Collocation;
+}
+
 export interface Lesson extends LessonSummary {
   full_text: string;
   // Public URL of the lesson audio (Vercel Blob); null for legacy lessons.
@@ -79,6 +86,7 @@ export interface Lesson extends LessonSummary {
   passages: Passage[];
   frames: Frame[];
   collocations: Collocation[];
+  customPhrases: CustomPhrase[];
 }
 
 export interface MistakeRow {

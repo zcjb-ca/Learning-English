@@ -6,6 +6,7 @@ import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import { requireEnv } from "./env";
 import type {
   Collocation,
+  CustomPhrase,
   Feedback,
   Frame,
   Lesson,
@@ -50,6 +51,15 @@ const SCHEMA_STATEMENTS: string[] = [
    )`,
   `create index if not exists attempts_lesson_idx on attempts(lesson_id)`,
   `create index if not exists attempts_mistake_idx on attempts(created_at desc) where is_mistake`,
+  `create table if not exists custom_phrases (
+     id uuid primary key default gen_random_uuid(),
+     lesson_id uuid references lessons(id) on delete cascade,
+     phrase text not null,
+     frame_json jsonb not null,
+     collocation_json jsonb not null,
+     created_at timestamptz not null default now()
+   )`,
+  `create index if not exists custom_phrases_lesson_idx on custom_phrases(lesson_id)`,
 ];
 
 export async function initSchema(): Promise<void> {
@@ -88,6 +98,21 @@ export async function getLesson(id: string): Promise<Lesson | null> {
   `) as Array<Record<string, unknown>>;
   const r = rows[0];
   if (!r) return null;
+
+  const cpRows = (await sql()`
+    select id, phrase, frame_json, collocation_json
+    from custom_phrases
+    where lesson_id = ${id}
+    order by created_at asc
+  `) as Array<Record<string, unknown>>;
+
+  const customPhrases: CustomPhrase[] = cpRows.map((cp) => ({
+    id: String(cp.id),
+    phrase: String(cp.phrase),
+    frame: cp.frame_json as Frame,
+    collocation: cp.collocation_json as Collocation,
+  }));
+
   return {
     id: String(r.id),
     title: String(r.title),
@@ -97,6 +122,7 @@ export async function getLesson(id: string): Promise<Lesson | null> {
     passages: (r.passages_json as Passage[]) ?? [],
     frames: (r.frames_json as Frame[]) ?? [],
     collocations: (r.collocations_json as Collocation[]) ?? [],
+    customPhrases,
     created_at: toIso(r.created_at),
   };
 }
@@ -149,6 +175,29 @@ export async function insertAttempt(input: {
       ${input.mistakeTag}
     )
   `;
+}
+
+export async function insertCustomPhrase(input: {
+  lessonId: string;
+  phrase: string;
+  frame: Frame;
+  collocation: Collocation;
+}): Promise<string> {
+  const rows = (await sql()`
+    insert into custom_phrases (lesson_id, phrase, frame_json, collocation_json)
+    values (
+      ${input.lessonId},
+      ${input.phrase},
+      ${JSON.stringify(input.frame)}::jsonb,
+      ${JSON.stringify(input.collocation)}::jsonb
+    )
+    returning id
+  `) as Array<{ id: string }>;
+  return String(rows[0].id);
+}
+
+export async function deleteCustomPhrase(id: string): Promise<void> {
+  await sql()`delete from custom_phrases where id = ${id}`;
 }
 
 export async function listMistakes(limit = 50): Promise<MistakeRow[]> {
