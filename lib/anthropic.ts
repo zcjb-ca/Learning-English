@@ -12,7 +12,14 @@ import {
   feedbackUserPrompt,
   ingestUserPrompt,
 } from "./prompts";
-import type { Feedback, Frame, IngestResult, Passage, PracticeStage } from "./types";
+import type {
+  Collocation,
+  Feedback,
+  Frame,
+  IngestResult,
+  Passage,
+  PracticeStage,
+} from "./types";
 
 let client: Anthropic | null = null;
 
@@ -82,13 +89,57 @@ function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
-export function normalizeIngest(raw: unknown): IngestResult {
-  const obj = (raw ?? {}) as { passages?: unknown; frames?: unknown };
-  const passages: Passage[] = Array.isArray(obj.passages)
-    ? obj.passages
-        .map((p) => ({ text: asString((p as Passage)?.text).trim() }))
-        .filter((p) => p.text.length > 0)
-    : [];
+function includesPhrase(haystack: string, needle: string): boolean {
+  return haystack.toLowerCase().includes(needle.toLowerCase());
+}
+
+// Merge the model's semantic annotations back onto the deterministic passages
+// parsed from the .lrc. The passages' text/timing/lines are the source of truth
+// and are never overwritten — we only add translation_zh and the collocation
+// phrases that fall inside each passage (matched as substrings, in code).
+export function normalizeIngest(raw: unknown, sourcePassages: Passage[]): IngestResult {
+  const obj = (raw ?? {}) as { passages?: unknown; frames?: unknown; collocations?: unknown };
+
+  // 1) Per-passage translations, keyed by the index the model echoed back.
+  const translations = new Map<number, string>();
+  if (Array.isArray(obj.passages)) {
+    for (const p of obj.passages) {
+      const i = (p as { i?: unknown })?.i;
+      const tz = asString((p as { translation_zh?: unknown })?.translation_zh).trim();
+      if (typeof i === "number" && Number.isInteger(i) && tz.length > 0) {
+        translations.set(i, tz);
+      }
+    }
+  }
+
+  // 2) Collocations: keep only those that truly appear in the transcript, dedup,
+  //    and attach the first containing passage's timing for audio playback.
+  const collocations: Collocation[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(obj.collocations)) {
+    for (const c of obj.collocations) {
+      const phrase = asString((c as Collocation)?.phrase).trim();
+      const meaning = asString((c as Collocation)?.meaning_zh).trim();
+      if (phrase.length === 0) continue;
+      const key = phrase.toLowerCase();
+      if (seen.has(key)) continue;
+      const host = sourcePassages.find((p) => includesPhrase(p.text, phrase));
+      if (!host) continue; // not a real substring — can't highlight or clip it
+      seen.add(key);
+      collocations.push({ phrase, meaning_zh: meaning, start: host.start, end: host.end });
+    }
+  }
+
+  // 3) Enrich the deterministic passages with translation + the collocation
+  //    phrases that occur inside each one (so the reader can bold them).
+  const phrases = collocations.map((c) => c.phrase);
+  const passages: Passage[] = sourcePassages.map((p, i) => ({
+    ...p,
+    translation_zh: translations.get(i),
+    collocations: phrases.filter((phrase) => includesPhrase(p.text, phrase)),
+  }));
+
+  // 4) Frames (unchanged contract).
   const frames: Frame[] = Array.isArray(obj.frames)
     ? obj.frames
         .map((f) => ({
@@ -98,7 +149,8 @@ export function normalizeIngest(raw: unknown): IngestResult {
         }))
         .filter((f) => f.frame.length > 0)
     : [];
-  return { passages, frames };
+
+  return { passages, frames, collocations };
 }
 
 export function normalizeFeedback(raw: unknown, userInput: string): Feedback {
@@ -116,14 +168,14 @@ export function normalizeFeedback(raw: unknown, userInput: string): Feedback {
   };
 }
 
-export async function ingestLesson(transcript: string): Promise<IngestResult> {
+export async function ingestLesson(passages: Passage[]): Promise<IngestResult> {
   const raw = await generateJson<unknown>({
     model: MODELS.ingest,
     system: INGEST_SYSTEM,
-    userText: ingestUserPrompt(transcript),
-    maxTokens: 8000,
+    userText: ingestUserPrompt(passages),
+    maxTokens: 12000,
   });
-  return normalizeIngest(raw);
+  return normalizeIngest(raw, passages);
 }
 
 export async function generateFeedback(input: {

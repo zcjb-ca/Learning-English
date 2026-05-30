@@ -5,6 +5,7 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import { requireEnv } from "./env";
 import type {
+  Collocation,
   Feedback,
   Frame,
   Lesson,
@@ -26,10 +27,16 @@ const SCHEMA_STATEMENTS: string[] = [
      title text not null,
      source_filename text,
      full_text text not null,
+     audio_url text,
      passages_json jsonb not null default '[]'::jsonb,
      frames_json jsonb not null default '[]'::jsonb,
+     collocations_json jsonb not null default '[]'::jsonb,
      created_at timestamptz not null default now()
    )`,
+  // Idempotent migrations so an existing install picks up the new columns by
+  // re-running /api/init (these are no-ops once the columns exist).
+  `alter table lessons add column if not exists audio_url text`,
+  `alter table lessons add column if not exists collocations_json jsonb not null default '[]'::jsonb`,
   `create table if not exists attempts (
      id uuid primary key default gen_random_uuid(),
      lesson_id uuid references lessons(id) on delete cascade,
@@ -73,7 +80,8 @@ export async function listLessons(): Promise<LessonSummary[]> {
 
 export async function getLesson(id: string): Promise<Lesson | null> {
   const rows = (await sql()`
-    select id, title, source_filename, full_text, passages_json, frames_json, created_at
+    select id, title, source_filename, full_text, audio_url,
+           passages_json, frames_json, collocations_json, created_at
     from lessons
     where id = ${id}
     limit 1
@@ -85,27 +93,34 @@ export async function getLesson(id: string): Promise<Lesson | null> {
     title: String(r.title),
     source_filename: r.source_filename === null ? null : String(r.source_filename),
     full_text: String(r.full_text),
+    audio_url: r.audio_url === null || r.audio_url === undefined ? null : String(r.audio_url),
     passages: (r.passages_json as Passage[]) ?? [],
     frames: (r.frames_json as Frame[]) ?? [],
+    collocations: (r.collocations_json as Collocation[]) ?? [],
     created_at: toIso(r.created_at),
   };
 }
 
 export async function insertLesson(input: {
   title: string;
-  sourceFilename: string;
+  sourceFilename: string | null;
   fullText: string;
+  audioUrl: string | null;
   passages: Passage[];
   frames: Frame[];
+  collocations: Collocation[];
 }): Promise<string> {
   const rows = (await sql()`
-    insert into lessons (title, source_filename, full_text, passages_json, frames_json)
+    insert into lessons
+      (title, source_filename, full_text, audio_url, passages_json, frames_json, collocations_json)
     values (
       ${input.title},
       ${input.sourceFilename},
       ${input.fullText},
+      ${input.audioUrl},
       ${JSON.stringify(input.passages)}::jsonb,
-      ${JSON.stringify(input.frames)}::jsonb
+      ${JSON.stringify(input.frames)}::jsonb,
+      ${JSON.stringify(input.collocations)}::jsonb
     )
     returning id
   `) as Array<{ id: string }>;

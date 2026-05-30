@@ -10,10 +10,17 @@ create table if not exists lessons (
   title text not null,
   source_filename text,
   full_text text not null,
+  audio_url text,
   passages_json jsonb not null default '[]'::jsonb,
   frames_json jsonb not null default '[]'::jsonb,
+  collocations_json jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
+
+-- If you created the lessons table before audio/collocations existed, run these
+-- (the app also does this automatically when you open /api/init):
+alter table lessons add column if not exists audio_url text;
+alter table lessons add column if not exists collocations_json jsonb not null default '[]'::jsonb;
 
 create table if not exists attempts (
   id uuid primary key default gen_random_uuid(),

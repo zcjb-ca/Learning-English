@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { Frame, Lesson, PracticeStage } from "@/lib/types";
-import { Speak } from "./Speak";
+import { SubtitleReader } from "./SubtitleReader";
 import { FeedbackForm } from "./FeedbackForm";
 
 interface PracticeProps {
@@ -45,7 +45,14 @@ export function Practice({ lesson }: PracticeProps) {
 
       <p className="text-sm text-slate-500">{STEPS[step - 1].hint}</p>
 
-      {step === 1 ? <InputStage lesson={lesson} /> : null}
+      {step === 1 ? (
+        <SubtitleReader
+          lessonId={lesson.id}
+          passages={lesson.passages}
+          collocations={lesson.collocations}
+          audioUrl={lesson.audio_url}
+        />
+      ) : null}
       {step === 2 ? <FramesStage frames={frames} /> : null}
 
       {step >= 3 ? (
@@ -122,21 +129,6 @@ function StepBar({ current, onPick }: StepBarProps) {
   );
 }
 
-function InputStage({ lesson }: { lesson: Lesson }) {
-  const passages = lesson.passages.length > 0 ? lesson.passages : [{ text: lesson.full_text }];
-  return (
-    <div className="space-y-4">
-      {passages.map((p, i) => (
-        <div key={i} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
-          {p.title ? <h3 className="font-medium text-slate-800">{p.title}</h3> : null}
-          <p className="whitespace-pre-wrap text-base leading-relaxed text-slate-800">{p.text}</p>
-          <Speak text={p.text} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function FramesStage({ frames }: { frames: Frame[] }) {
   if (frames.length === 0) {
     return (
@@ -152,7 +144,6 @@ function FramesStage({ frames }: { frames: Frame[] }) {
           <p className="text-base font-medium text-slate-900">{f.frame}</p>
           <p className="text-sm text-slate-600">例：{f.example}</p>
           <p className="text-sm text-slate-400">{f.meaning_zh}</p>
-          <Speak text={f.example} label="听例句" />
         </div>
       ))}
     </div>

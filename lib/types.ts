@@ -1,8 +1,34 @@
 // Shared domain types for lessons, practice, and feedback.
 
+// One timed line from the source subtitle (.lrc). `start`/`end` are in seconds
+// and are used to clip the matching segment out of the lesson audio.
+export interface SubtitleLine {
+  start: number;
+  end: number;
+  text: string;
+}
+
 export interface Passage {
   title?: string;
   text: string;
+  // Timing for clipping the matching segment from the lesson audio (seconds).
+  start?: number;
+  end?: number;
+  // The raw subtitle lines this passage was grouped from (each with its own timing).
+  lines?: SubtitleLine[];
+  // Simplified-Chinese translation of `text`, shown beneath the English in the reader.
+  translation_zh?: string;
+  // Fixed collocations appearing verbatim in `text`; the reader bolds these substrings.
+  collocations?: string[];
+}
+
+// A fixed collocation / chunk worth memorizing, e.g. "keep it polite". `start`/`end`
+// point at the first passage that contains it, so it can be played from the audio.
+export interface Collocation {
+  phrase: string;
+  meaning_zh: string;
+  start?: number;
+  end?: number;
 }
 
 export interface Frame {
@@ -17,6 +43,7 @@ export interface Frame {
 export interface IngestResult {
   passages: Passage[];
   frames: Frame[];
+  collocations: Collocation[];
 }
 
 export interface Feedback {
@@ -47,8 +74,11 @@ export interface LessonSummary {
 
 export interface Lesson extends LessonSummary {
   full_text: string;
+  // Public URL of the lesson audio (Vercel Blob); null for legacy lessons.
+  audio_url: string | null;
   passages: Passage[];
   frames: Frame[];
+  collocations: Collocation[];
 }
 
 export interface MistakeRow {
@@ -63,4 +93,4 @@ export interface MistakeRow {
   created_at: string;
 }
 
-export type PracticeStage = "3a" | "3b" | "4" | "review";
+export type PracticeStage = "3a" | "3b" | "4" | "collocation" | "review";
