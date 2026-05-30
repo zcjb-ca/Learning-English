@@ -5,6 +5,7 @@
 // assistant-message prefill trick ("conversation must end with a user message").
 
 import Anthropic from "@anthropic-ai/sdk";
+import { jsonrepair } from "jsonrepair";
 import { MODELS } from "./models";
 import {
   FEEDBACK_SYSTEM,
@@ -59,7 +60,14 @@ export function parseJsonObject<T>(text: string): T {
   if (start === -1 || end === -1 || end < start) {
     throw new Error("模型没有返回有效的 JSON");
   }
-  return JSON.parse(text.slice(start, end + 1)) as T;
+  const json = text.slice(start, end + 1);
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    console.error("[parseJson] 原始输出（前500字）:", json.slice(0, 500));
+    const repaired = jsonrepair(json);
+    return JSON.parse(repaired) as T;
+  }
 }
 
 async function generateJson<T>(args: {
