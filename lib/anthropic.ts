@@ -23,6 +23,13 @@ import type {
 
 let client: Anthropic | null = null;
 
+function usePromptCaching(): boolean {
+  const base = process.env.ANTHROPIC_BASE_URL;
+  if (!base) return true;
+  if (process.env.ENABLE_PROMPT_CACHING === "1") return true;
+  return false;
+}
+
 // Works with the official Anthropic API or any Anthropic-compatible gateway
 // (e.g. a company proxy). Auth is whichever the gateway expects: ANTHROPIC_API_KEY
 // is sent as `x-api-key`, ANTHROPIC_AUTH_TOKEN as `Authorization: Bearer`. The
@@ -62,12 +69,13 @@ async function generateJson<T>(args: {
   cachedContext?: string;
   maxTokens: number;
 }): Promise<T> {
+  const caching = usePromptCaching();
   const userContent: Anthropic.ContentBlockParam[] = [];
   if (args.cachedContext) {
     userContent.push({
       type: "text",
       text: args.cachedContext,
-      cache_control: { type: "ephemeral" },
+      ...(caching ? { cache_control: { type: "ephemeral" } } : {}),
     });
   }
   userContent.push({ type: "text", text: args.userText });
@@ -75,7 +83,7 @@ async function generateJson<T>(args: {
   const message = await getClient().messages.create({
     model: args.model,
     max_tokens: args.maxTokens,
-    system: [{ type: "text", text: args.system, cache_control: { type: "ephemeral" } }],
+    system: [{ type: "text", text: args.system, ...(caching ? { cache_control: { type: "ephemeral" } } : {}) }],
     messages: [{ role: "user", content: userContent }],
   });
 

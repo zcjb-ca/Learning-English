@@ -76,8 +76,9 @@ export async function POST(request: NextRequest) {
     ingested = await ingestLesson(passages);
   } catch (err) {
     console.error("[lessons] AI ingest 失败:", err);
+    const detail = err instanceof Error ? err.message : "";
     return NextResponse.json(
-      { error: "AI 抽取句式失败，请稍后重试（也可能是 API key 未配置或额度不足）。" },
+      { error: detail || "AI 抽取句式失败，请稍后重试。" },
       { status: 502 },
     );
   }
