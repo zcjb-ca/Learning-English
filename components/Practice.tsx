@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { Collocation, Frame, Lesson, PracticeStage } from "@/lib/types";
+import type { Collocation, CustomPhrase, Frame, Lesson, PracticeStage } from "@/lib/types";
 import { useClipPlayer } from "./useClipPlayer";
 import { SubtitleReader, PlayButton } from "./SubtitleReader";
 import { FeedbackForm } from "./FeedbackForm";
@@ -33,10 +33,11 @@ export function Practice({ lesson }: PracticeProps) {
 
   const player = useClipPlayer(lesson.audio_url);
 
-  const [customFrames, setCustomFrames] = useState<Frame[]>([]);
-  const [customCollocations, setCustomCollocations] = useState<Collocation[]>([]);
+  const [customPhrases, setCustomPhrases] = useState<CustomPhrase[]>(lesson.customPhrases);
   const [generating, setGenerating] = useState(false);
 
+  const customFrames = customPhrases.map((cp) => cp.frame);
+  const customCollocations = customPhrases.map((cp) => cp.collocation);
   const allFrames = [...lesson.frames, ...customFrames];
   const allCollocations = [...lesson.collocations, ...customCollocations];
   const hasFrames = allFrames.length > 0;
@@ -48,27 +49,26 @@ export function Practice({ lesson }: PracticeProps) {
       const res = await fetch("/api/lessons/generate-frame", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phrase, context }),
+        body: JSON.stringify({ lessonId: lesson.id, phrase, context }),
       });
       if (!res.ok) return;
-      const data: { frame?: Frame; collocation?: Collocation } = await res.json();
-      if (data.frame) {
-        setCustomFrames((prev) => [...prev, data.frame!]);
-      }
-      if (data.collocation) {
-        setCustomCollocations((prev) => [...prev, data.collocation!]);
+      const data: { id?: string; frame?: Frame; collocation?: Collocation } = await res.json();
+      if (data.id && data.frame && data.collocation) {
+        setCustomPhrases((prev) => [
+          ...prev,
+          { id: data.id!, phrase, frame: data.frame!, collocation: data.collocation! },
+        ]);
       }
     } finally {
       setGenerating(false);
     }
   }
 
-  function removeCustomFrame(index: number) {
-    setCustomFrames((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  function removeCustomCollocation(index: number) {
-    setCustomCollocations((prev) => prev.filter((_, i) => i !== index));
+  async function removeCustom(index: number) {
+    const cp = customPhrases[index];
+    if (!cp) return;
+    setCustomPhrases((prev) => prev.filter((_, i) => i !== index));
+    await fetch(`/api/lessons/custom-phrase/${cp.id}`, { method: "DELETE" }).catch(() => {});
   }
 
   function goStep(n: number) {
@@ -100,14 +100,14 @@ export function Practice({ lesson }: PracticeProps) {
           <FramesStage
             frames={allFrames}
             customStartIndex={lesson.frames.length}
-            onRemoveCustom={removeCustomFrame}
+            onRemoveCustom={removeCustom}
           />
           {allCollocations.length > 0 ? (
             <CollocationsStage
               lessonId={lesson.id}
               collocations={allCollocations}
               customStartIndex={lesson.collocations.length}
-              onRemoveCustom={removeCustomCollocation}
+              onRemoveCustom={removeCustom}
               player={player}
             />
           ) : null}

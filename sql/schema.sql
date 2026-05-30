@@ -36,3 +36,14 @@ create table if not exists attempts (
 
 create index if not exists attempts_lesson_idx on attempts(lesson_id);
 create index if not exists attempts_mistake_idx on attempts(created_at desc) where is_mistake;
+
+create table if not exists custom_phrases (
+  id uuid primary key default gen_random_uuid(),
+  lesson_id uuid references lessons(id) on delete cascade,
+  phrase text not null,
+  frame_json jsonb not null,
+  collocation_json jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists custom_phrases_lesson_idx on custom_phrases(lesson_id);
