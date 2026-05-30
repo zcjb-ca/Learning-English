@@ -77,9 +77,6 @@ export function UploadForm() {
           handleUploadUrl: "/api/lessons/upload-audio",
           contentType: AUDIO_MIME[ext] ?? "audio/mpeg",
           abortSignal: controller.signal,
-          onUploadProgress: ({ percentage }) => {
-            setPhase(percentage > 0 ? `上传音频中 ${percentage}%` : "上传音频中");
-          },
         });
       } finally {
         clearTimeout(uploadTimeout);
