@@ -10,8 +10,10 @@ import { MODELS } from "./models";
 import {
   FEEDBACK_SYSTEM,
   INGEST_SYSTEM,
+  PHRASE_FRAME_SYSTEM,
   feedbackUserPrompt,
   ingestUserPrompt,
+  phraseFrameUserPrompt,
 } from "./prompts";
 import type {
   Collocation,
@@ -215,4 +217,32 @@ export async function generateFeedback(input: {
     maxTokens: 1024,
   });
   return normalizeFeedback(raw, input.userInput);
+}
+
+export async function generateFrameFromPhrase(phrase: string, context: string): Promise<{
+  frame: Frame;
+  collocation: Collocation;
+}> {
+  const raw = await generateJson<{
+    frame?: string;
+    example?: string;
+    meaning_zh?: string;
+    phrase_meaning_zh?: string;
+  }>({
+    model: MODELS.feedback,
+    system: PHRASE_FRAME_SYSTEM,
+    userText: phraseFrameUserPrompt(phrase, context),
+    maxTokens: 1024,
+  });
+  return {
+    frame: {
+      frame: asString(raw.frame, `___ ${phrase} ___`),
+      example: asString(raw.example, phrase),
+      meaning_zh: asString(raw.meaning_zh),
+    },
+    collocation: {
+      phrase,
+      meaning_zh: asString(raw.phrase_meaning_zh, asString(raw.meaning_zh)),
+    },
+  };
 }

@@ -74,6 +74,30 @@ const STAGE_LABEL: Record<PracticeStage, string> = {
   review: 'Review: the learner is re-attempting a structure they previously got wrong. The "prompt" below is the cue.',
 };
 
+// ---------------------------------------------------------------------------
+// Phrase → Frame: turn a learner-selected phrase into a transferable frame
+// + a collocation entry, so it can be practised through stages 2–5.
+// ---------------------------------------------------------------------------
+
+export const PHRASE_FRAME_SYSTEM = `You are an expert English-as-a-second-language coach. A learner has selected a phrase from a podcast transcript that interests them. Your job:
+
+1. Turn that phrase into ONE transferable sentence frame — a reusable pattern with blanks ("___") that applies in many everyday situations, not just the original topic.
+2. Give one natural example sentence that uses the frame.
+3. Give a short Simplified-Chinese description of a DIFFERENT everyday situation whose natural English would reuse this frame (this becomes the stage-3b prompt). It must NOT be a literal translation of the example.
+4. Give a short Simplified-Chinese gloss of the phrase's meaning or usage (for the collocation drill).
+
+Output ONLY a JSON object, no markdown, no commentary:
+{"frame":"...","example":"...","meaning_zh":"...","phrase_meaning_zh":"..."}`;
+
+export function phraseFrameUserPrompt(phrase: string, context: string): string {
+  return `Phrase the learner selected: "${phrase}"
+
+Context (the passage it came from):
+"""${context}"""
+
+Generate the frame, example, meaning_zh (for a different situation), and phrase_meaning_zh as specified.`;
+}
+
 export function feedbackUserPrompt(input: {
   stage: PracticeStage;
   promptShown: string;
