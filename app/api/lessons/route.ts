@@ -86,15 +86,25 @@ export async function POST(request: NextRequest) {
   const title =
     titleRaw.trim().length > 0 ? titleRaw.trim() : deriveTitleFromFilename(sourceFilename ?? "");
 
-  const id = await insertLesson({
-    title,
-    sourceFilename,
-    fullText,
-    audioUrl,
-    passages: ingested.passages,
-    frames: ingested.frames,
-    collocations: ingested.collocations,
-  });
+  let id: string;
+  try {
+    id = await insertLesson({
+      title,
+      sourceFilename,
+      fullText,
+      audioUrl,
+      passages: ingested.passages,
+      frames: ingested.frames,
+      collocations: ingested.collocations,
+    });
+  } catch (err) {
+    console.error("[lessons] DB insert 失败:", err);
+    const detail = err instanceof Error ? err.message : "";
+    return NextResponse.json(
+      { error: detail || "保存课程失败，请确认数据库已初始化（首页点「初始化」按钮）。" },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json({
     id,

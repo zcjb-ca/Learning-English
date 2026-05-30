@@ -93,8 +93,17 @@ export function UploadForm() {
           audioUrl: blob.url,
         }),
       });
+      if (!res.ok) {
+        let msg = "生成失败，请重试。";
+        try {
+          const body = await res.json();
+          if (body.error) msg = body.error;
+        } catch {}
+        setError(msg);
+        return;
+      }
       const data: Partial<UploadResult> & { error?: string } = await res.json();
-      if (!res.ok || !data.id) {
+      if (!data.id) {
         setError(data.error ?? "生成失败，请重试。");
         return;
       }
