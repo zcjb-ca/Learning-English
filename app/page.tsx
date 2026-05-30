@@ -55,7 +55,7 @@ export default async function HomePage() {
             </h2>
             {lessons.length === 0 ? (
               <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-                还没有课程。上传一个 PDF，几十秒后就能开始练。
+                还没有课程。上传字幕 + 音频，几十秒后就能开始练。
               </p>
             ) : (
               <ul className="space-y-2">

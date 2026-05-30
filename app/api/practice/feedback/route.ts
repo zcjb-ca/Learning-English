@@ -9,7 +9,7 @@ import type { PracticeStage } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const VALID_STAGES: PracticeStage[] = ["3a", "3b", "4", "review"];
+const VALID_STAGES: PracticeStage[] = ["3a", "3b", "4", "collocation", "review"];
 const MAX_INPUT_CHARS = 2000;
 
 export async function POST(request: NextRequest) {

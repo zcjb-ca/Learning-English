@@ -5,16 +5,33 @@
 // assistant-message prefill trick ("conversation must end with a user message").
 
 import Anthropic from "@anthropic-ai/sdk";
+import { jsonrepair } from "jsonrepair";
 import { MODELS } from "./models";
 import {
   FEEDBACK_SYSTEM,
   INGEST_SYSTEM,
+  PHRASE_FRAME_SYSTEM,
   feedbackUserPrompt,
   ingestUserPrompt,
+  phraseFrameUserPrompt,
 } from "./prompts";
-import type { Feedback, Frame, IngestResult, Passage, PracticeStage } from "./types";
+import type {
+  Collocation,
+  Feedback,
+  Frame,
+  IngestResult,
+  Passage,
+  PracticeStage,
+} from "./types";
 
 let client: Anthropic | null = null;
+
+function usePromptCaching(): boolean {
+  const base = process.env.ANTHROPIC_BASE_URL;
+  if (!base) return true;
+  if (process.env.ENABLE_PROMPT_CACHING === "1") return true;
+  return false;
+}
 
 // Works with the official Anthropic API or any Anthropic-compatible gateway
 // (e.g. a company proxy). Auth is whichever the gateway expects: ANTHROPIC_API_KEY
@@ -45,7 +62,23 @@ export function parseJsonObject<T>(text: string): T {
   if (start === -1 || end === -1 || end < start) {
     throw new Error("模型没有返回有效的 JSON");
   }
-  return JSON.parse(text.slice(start, end + 1)) as T;
+  const json = text.slice(start, end + 1);
+  try {
+    return JSON.parse(json) as T;
+  } catch (firstErr) {
+    try {
+      const repaired = jsonrepair(json);
+      return JSON.parse(repaired) as T;
+    } catch (repairErr) {
+      const pos = Number(String(repairErr).match(/position (\d+)/)?.[1] ?? -1);
+      const snippet = pos >= 0
+        ? json.slice(Math.max(0, pos - 80), pos + 80)
+        : json.slice(0, 300);
+      const msg = `JSON 解析失败。原始错误: ${firstErr}; jsonrepair 错误: ${repairErr}; 上下文: …${snippet}…`;
+      console.error("[parseJson]", msg);
+      throw new Error(msg);
+    }
+  }
 }
 
 async function generateJson<T>(args: {
@@ -55,12 +88,13 @@ async function generateJson<T>(args: {
   cachedContext?: string;
   maxTokens: number;
 }): Promise<T> {
+  const caching = usePromptCaching();
   const userContent: Anthropic.ContentBlockParam[] = [];
   if (args.cachedContext) {
     userContent.push({
       type: "text",
       text: args.cachedContext,
-      cache_control: { type: "ephemeral" },
+      ...(caching ? { cache_control: { type: "ephemeral" } } : {}),
     });
   }
   userContent.push({ type: "text", text: args.userText });
@@ -68,7 +102,7 @@ async function generateJson<T>(args: {
   const message = await getClient().messages.create({
     model: args.model,
     max_tokens: args.maxTokens,
-    system: [{ type: "text", text: args.system, cache_control: { type: "ephemeral" } }],
+    system: [{ type: "text", text: args.system, ...(caching ? { cache_control: { type: "ephemeral" } } : {}) }],
     messages: [{ role: "user", content: userContent }],
   });
 
@@ -82,13 +116,57 @@ function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
-export function normalizeIngest(raw: unknown): IngestResult {
-  const obj = (raw ?? {}) as { passages?: unknown; frames?: unknown };
-  const passages: Passage[] = Array.isArray(obj.passages)
-    ? obj.passages
-        .map((p) => ({ text: asString((p as Passage)?.text).trim() }))
-        .filter((p) => p.text.length > 0)
-    : [];
+function includesPhrase(haystack: string, needle: string): boolean {
+  return haystack.toLowerCase().includes(needle.toLowerCase());
+}
+
+// Merge the model's semantic annotations back onto the deterministic passages
+// parsed from the .lrc. The passages' text/timing/lines are the source of truth
+// and are never overwritten — we only add translation_zh and the collocation
+// phrases that fall inside each passage (matched as substrings, in code).
+export function normalizeIngest(raw: unknown, sourcePassages: Passage[]): IngestResult {
+  const obj = (raw ?? {}) as { passages?: unknown; frames?: unknown; collocations?: unknown };
+
+  // 1) Per-passage translations, keyed by the index the model echoed back.
+  const translations = new Map<number, string>();
+  if (Array.isArray(obj.passages)) {
+    for (const p of obj.passages) {
+      const i = (p as { i?: unknown })?.i;
+      const tz = asString((p as { translation_zh?: unknown })?.translation_zh).trim();
+      if (typeof i === "number" && Number.isInteger(i) && tz.length > 0) {
+        translations.set(i, tz);
+      }
+    }
+  }
+
+  // 2) Collocations: keep only those that truly appear in the transcript, dedup,
+  //    and attach the first containing passage's timing for audio playback.
+  const collocations: Collocation[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(obj.collocations)) {
+    for (const c of obj.collocations) {
+      const phrase = asString((c as Collocation)?.phrase).trim();
+      const meaning = asString((c as Collocation)?.meaning_zh).trim();
+      if (phrase.length === 0) continue;
+      const key = phrase.toLowerCase();
+      if (seen.has(key)) continue;
+      const host = sourcePassages.find((p) => includesPhrase(p.text, phrase));
+      if (!host) continue; // not a real substring — can't highlight or clip it
+      seen.add(key);
+      collocations.push({ phrase, meaning_zh: meaning, start: host.start, end: host.end });
+    }
+  }
+
+  // 3) Enrich the deterministic passages with translation + the collocation
+  //    phrases that occur inside each one (so the reader can bold them).
+  const phrases = collocations.map((c) => c.phrase);
+  const passages: Passage[] = sourcePassages.map((p, i) => ({
+    ...p,
+    translation_zh: translations.get(i),
+    collocations: phrases.filter((phrase) => includesPhrase(p.text, phrase)),
+  }));
+
+  // 4) Frames (unchanged contract).
   const frames: Frame[] = Array.isArray(obj.frames)
     ? obj.frames
         .map((f) => ({
@@ -98,7 +176,8 @@ export function normalizeIngest(raw: unknown): IngestResult {
         }))
         .filter((f) => f.frame.length > 0)
     : [];
-  return { passages, frames };
+
+  return { passages, frames, collocations };
 }
 
 export function normalizeFeedback(raw: unknown, userInput: string): Feedback {
@@ -116,14 +195,14 @@ export function normalizeFeedback(raw: unknown, userInput: string): Feedback {
   };
 }
 
-export async function ingestLesson(transcript: string): Promise<IngestResult> {
+export async function ingestLesson(passages: Passage[]): Promise<IngestResult> {
   const raw = await generateJson<unknown>({
     model: MODELS.ingest,
     system: INGEST_SYSTEM,
-    userText: ingestUserPrompt(transcript),
-    maxTokens: 8000,
+    userText: ingestUserPrompt(passages),
+    maxTokens: 12000,
   });
-  return normalizeIngest(raw);
+  return normalizeIngest(raw, passages);
 }
 
 export async function generateFeedback(input: {
@@ -138,4 +217,32 @@ export async function generateFeedback(input: {
     maxTokens: 1024,
   });
   return normalizeFeedback(raw, input.userInput);
+}
+
+export async function generateFrameFromPhrase(phrase: string, context: string): Promise<{
+  frame: Frame;
+  collocation: Collocation;
+}> {
+  const raw = await generateJson<{
+    frame?: string;
+    example?: string;
+    meaning_zh?: string;
+    phrase_meaning_zh?: string;
+  }>({
+    model: MODELS.feedback,
+    system: PHRASE_FRAME_SYSTEM,
+    userText: phraseFrameUserPrompt(phrase, context),
+    maxTokens: 1024,
+  });
+  return {
+    frame: {
+      frame: asString(raw.frame, `___ ${phrase} ___`),
+      example: asString(raw.example, phrase),
+      meaning_zh: asString(raw.meaning_zh),
+    },
+    collocation: {
+      phrase,
+      meaning_zh: asString(raw.phrase_meaning_zh, asString(raw.meaning_zh)),
+    },
+  };
 }

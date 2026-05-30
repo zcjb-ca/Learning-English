@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { Frame, Lesson, PracticeStage } from "@/lib/types";
-import { Speak } from "./Speak";
+import type { Collocation, Frame, Lesson, PracticeStage } from "@/lib/types";
+import { useClipPlayer } from "./useClipPlayer";
+import { SubtitleReader, PlayButton } from "./SubtitleReader";
 import { FeedbackForm } from "./FeedbackForm";
 
 interface PracticeProps {
@@ -24,15 +25,51 @@ const STEPS: StepDef[] = [
   { n: 5, label: "限时脱口", hint: "限时说出来，别想太多，先开口" },
 ];
 
-// Maps the visible step (3/4/5) to the practice stage the feedback model expects.
 const STEP_STAGE: Record<number, PracticeStage> = { 3: "3a", 4: "3b", 5: "4" };
 
 export function Practice({ lesson }: PracticeProps) {
   const [step, setStep] = useState(1);
   const [frameIndex, setFrameIndex] = useState(0);
 
-  const frames = lesson.frames;
-  const hasFrames = frames.length > 0;
+  const player = useClipPlayer(lesson.audio_url);
+
+  const [customFrames, setCustomFrames] = useState<Frame[]>([]);
+  const [customCollocations, setCustomCollocations] = useState<Collocation[]>([]);
+  const [generating, setGenerating] = useState(false);
+
+  const allFrames = [...lesson.frames, ...customFrames];
+  const allCollocations = [...lesson.collocations, ...customCollocations];
+  const hasFrames = allFrames.length > 0;
+
+  async function handleInterested(phrase: string, context: string) {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/lessons/generate-frame", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phrase, context }),
+      });
+      if (!res.ok) return;
+      const data: { frame?: Frame; collocation?: Collocation } = await res.json();
+      if (data.frame) {
+        setCustomFrames((prev) => [...prev, data.frame!]);
+      }
+      if (data.collocation) {
+        setCustomCollocations((prev) => [...prev, data.collocation!]);
+      }
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function removeCustomFrame(index: number) {
+    setCustomFrames((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function removeCustomCollocation(index: number) {
+    setCustomCollocations((prev) => prev.filter((_, i) => i !== index));
+  }
 
   function goStep(n: number) {
     setStep(n);
@@ -43,20 +80,49 @@ export function Practice({ lesson }: PracticeProps) {
     <div className="space-y-5">
       <StepBar current={step} onPick={goStep} />
 
-      <p className="text-sm text-slate-500">{STEPS[step - 1].hint}</p>
+      <div className="flex items-center gap-3">
+        <p className="text-sm text-slate-500">{STEPS[step - 1].hint}</p>
+        {generating ? (
+          <span className="shrink-0 text-xs text-amber-600">生成中……</span>
+        ) : null}
+      </div>
 
-      {step === 1 ? <InputStage lesson={lesson} /> : null}
-      {step === 2 ? <FramesStage frames={frames} /> : null}
+      {step === 1 ? (
+        <SubtitleReader
+          passages={lesson.passages}
+          player={player}
+          onInterested={handleInterested}
+        />
+      ) : null}
+
+      {step === 2 ? (
+        <div className="space-y-5">
+          <FramesStage
+            frames={allFrames}
+            customStartIndex={lesson.frames.length}
+            onRemoveCustom={removeCustomFrame}
+          />
+          {allCollocations.length > 0 ? (
+            <CollocationsStage
+              lessonId={lesson.id}
+              collocations={allCollocations}
+              customStartIndex={lesson.collocations.length}
+              onRemoveCustom={removeCustomCollocation}
+              player={player}
+            />
+          ) : null}
+        </div>
+      ) : null}
 
       {step >= 3 ? (
         hasFrames ? (
           <FrameWorkspace
             lessonId={lesson.id}
             step={step}
-            frames={frames}
+            frames={allFrames}
             frameIndex={frameIndex}
             onPrev={() => setFrameIndex((i) => Math.max(0, i - 1))}
-            onNext={() => setFrameIndex((i) => Math.min(frames.length - 1, i + 1))}
+            onNext={() => setFrameIndex((i) => Math.min(allFrames.length - 1, i + 1))}
           />
         ) : (
           <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
@@ -122,22 +188,15 @@ function StepBar({ current, onPick }: StepBarProps) {
   );
 }
 
-function InputStage({ lesson }: { lesson: Lesson }) {
-  const passages = lesson.passages.length > 0 ? lesson.passages : [{ text: lesson.full_text }];
-  return (
-    <div className="space-y-4">
-      {passages.map((p, i) => (
-        <div key={i} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
-          {p.title ? <h3 className="font-medium text-slate-800">{p.title}</h3> : null}
-          <p className="whitespace-pre-wrap text-base leading-relaxed text-slate-800">{p.text}</p>
-          <Speak text={p.text} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function FramesStage({ frames }: { frames: Frame[] }) {
+function FramesStage({
+  frames,
+  customStartIndex,
+  onRemoveCustom,
+}: {
+  frames: Frame[];
+  customStartIndex: number;
+  onRemoveCustom: (customIndex: number) => void;
+}) {
   if (frames.length === 0) {
     return (
       <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
@@ -147,15 +206,133 @@ function FramesStage({ frames }: { frames: Frame[] }) {
   }
   return (
     <div className="space-y-3">
-      {frames.map((f, i) => (
-        <div key={i} className="space-y-1.5 rounded-2xl border border-slate-200 bg-white p-4">
-          <p className="text-base font-medium text-slate-900">{f.frame}</p>
-          <p className="text-sm text-slate-600">例：{f.example}</p>
-          <p className="text-sm text-slate-400">{f.meaning_zh}</p>
-          <Speak text={f.example} label="听例句" />
-        </div>
-      ))}
+      {frames.map((f, i) => {
+        const isCustom = i >= customStartIndex;
+        return (
+          <div
+            key={i}
+            className={`space-y-1.5 rounded-2xl border p-4 ${
+              isCustom
+                ? "border-amber-200 bg-amber-50/50"
+                : "border-slate-200 bg-white"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 space-y-1.5">
+                <p className="text-base font-medium text-slate-900">{f.frame}</p>
+                <p className="text-sm text-slate-600">例：{f.example}</p>
+                <p className="text-sm text-slate-400">{f.meaning_zh}</p>
+              </div>
+              {isCustom ? (
+                <button
+                  type="button"
+                  onClick={() => onRemoveCustom(i - customStartIndex)}
+                  className="shrink-0 text-lg text-slate-400 hover:text-rose-500"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+function CollocationsStage({
+  lessonId,
+  collocations,
+  customStartIndex,
+  onRemoveCustom,
+  player,
+}: {
+  lessonId: string;
+  collocations: Collocation[];
+  customStartIndex: number;
+  onRemoveCustom: (customIndex: number) => void;
+  player: ReturnType<typeof useClipPlayer>;
+}) {
+  return (
+    <div className="space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+      <h3 className="text-sm font-medium text-indigo-900">
+        固定搭配（点开就能练造句）
+      </h3>
+      <ul className="space-y-2">
+        {collocations.map((c, i) => {
+          const isCustom = i >= customStartIndex;
+          return (
+            <CollocationItem
+              key={i}
+              lessonId={lessonId}
+              collocation={c}
+              player={player}
+              isCustom={isCustom}
+              onRemove={isCustom ? () => onRemoveCustom(i - customStartIndex) : undefined}
+            />
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function CollocationItem({
+  lessonId,
+  collocation,
+  player,
+  isCustom,
+  onRemove,
+}: {
+  lessonId: string;
+  collocation: Collocation;
+  player: ReturnType<typeof useClipPlayer>;
+  isCustom: boolean;
+  onRemove?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li
+      className={`rounded-xl p-3 ring-1 ${
+        isCustom ? "bg-amber-50/50 ring-amber-200" : "bg-white ring-slate-200"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-semibold text-slate-900">{collocation.phrase}</p>
+          <p className="text-sm text-slate-500">{collocation.meaning_zh}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <PlayButton player={player} start={collocation.start} end={collocation.end} />
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="rounded-full bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white active:bg-indigo-700"
+          >
+            {open ? "收起" : "造句练习"}
+          </button>
+          {onRemove ? (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="text-lg text-slate-400 hover:text-rose-500"
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {open ? (
+        <div className="mt-3">
+          <FeedbackForm
+            lessonId={lessonId}
+            stage="collocation"
+            promptShown={`固定搭配：${collocation.phrase}\n意思：${collocation.meaning_zh}`}
+            placeholder={`用 "${collocation.phrase}" 造一个自然的句子……`}
+          />
+        </div>
+      ) : null}
+    </li>
   );
 }
 
